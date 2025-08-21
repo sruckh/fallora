@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="8" cy="8" r="7" fill="url(#grad1)" stroke="#4f46e5" stroke-width="0.5"/>
+  
+  <!-- Character/Avatar representation (simplified head) -->
+  <circle cx="8" cy="6" r="2.5" fill="#ffffff" opacity="0.9"/>
+  <circle cx="7" cy="5.5" r="0.3" fill="#4f46e5"/>
+  <circle cx="9" cy="5.5" r="0.3" fill="#4f46e5"/>
+  <path d="M 6.5 6.8 Q 8 7.3 9.5 6.8" stroke="#4f46e5" stroke-width="0.3" fill="none"/>
+  
+  <!-- LoRA adaptation symbols (small geometric shapes) -->
+  <rect x="4" y="11" width="1.5" height="1.5" fill="#fbbf24" opacity="0.8" rx="0.2"/>
+  <circle cx="11" cy="11.5" r="0.8" fill="#ef4444" opacity="0.8"/>
+  <polygon points="8,12.5 7.2,13.5 8.8,13.5" fill="#22c55e" opacity="0.8"/>
+</svg>

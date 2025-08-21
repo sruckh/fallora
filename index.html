@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>falLoRA - Character LoRA Generator</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="loading-overlay">
+    <div class="loading-content">
+      <div class="lds-hourglass" role="status" aria-live="polite">
+        <span class="sr-only">Generating image...</span>
+      </div>
+      <p class="loading-text">🎨 Generating your image...</p>
+    </div>
+  </div>
+
+  <div class="container">
+    <header>
+      <h1>🎨 falLoRA</h1>
+      <p>Generate character images using Hugging Face LoRA models via fal.ai</p>
+    </header>
+    
+    <main>
+      <form id="generate-form">
+        <div class="form-group">
+          <label for="base-model">🤖 Base Model</label>
+          <select 
+            id="base-model" 
+            name="base-model" 
+            required
+          >
+            <option value="fal-ai/flux-lora" selected>fal-ai/flux-lora</option>
+            <option value="fal-ai/flux-kontext-lora">fal-ai/flux-kontext-lora</option>
+            <option value="fal-ai/wan/v2.2-a14b/text-to-image/lora">fal-ai/wan/v2.2-a14b/text-to-image/lora</option>
+            <option value="fal-ai/qwen-image">fal-ai/qwen-image</option>
+          </select>
+          <small>Base diffusion model to apply LoRAs to (fal.ai LoRA-enabled models)</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="loras">🎭 LoRA Models & Weights</label>
+          <div id="lora-container">
+            <div class="lora-entry">
+              <input 
+                type="text" 
+                class="lora-model" 
+                placeholder="LoRA model (e.g., character-style-lora)" 
+                required
+              >
+              <input 
+                type="number" 
+                class="lora-weight" 
+                placeholder="Weight" 
+                min="0" 
+                max="2" 
+                step="0.01" 
+                value="1.00"
+              >
+              <button type="button" class="remove-lora" style="display: none;">×</button>
+            </div>
+          </div>
+          <button type="button" id="add-lora" class="add-btn">+ Add Another LoRA</button>
+          <small>Add multiple LoRA models with weights (0.00-2.00). Higher weights = stronger effect. Supports decimal precision to hundredths (e.g., 0.25, 1.75).</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="resolution">📐 Image Resolution</label>
+          <select id="resolution" name="resolution" required>
+            <optgroup label="Instagram">
+              <option value="320x320">320×320 (Profile Photo)</option>
+              <option value="1080x566">1080×566 (Feed Landscape)</option>
+              <option value="1080x1080" selected>1080×1080 (Feed Square)</option>
+              <option value="1080x1350">1080×1350 (Feed Vertical)</option>
+              <option value="1080x1920">1080×1920 (Stories/Reels)</option>
+            </optgroup>
+            <optgroup label="X (Twitter)">
+              <option value="400x400">400×400 (Profile Photo)</option>
+              <option value="1500x500">1500×500 (Header Photo)</option>
+              <option value="720x720">720×720 (Square Post)</option>
+              <option value="1280x720">1280×720 (Landscape Post)</option>
+              <option value="720x1280">720×1280 (Vertical Post)</option>
+            </optgroup>
+            <optgroup label="Facebook">
+              <option value="196x196">196×196 (Profile Photo)</option>
+              <option value="851x315">851×315 (Cover Photo)</option>
+              <option value="1080x566">1080×566 (Feed Landscape)</option>
+              <option value="1080x1080">1080×1080 (Feed Square)</option>
+              <option value="1080x1359">1080×1359 (Feed Vertical)</option>
+              <option value="1080x1920">1080×1920 (Stories)</option>
+            </optgroup>
+            <optgroup label="LinkedIn">
+              <option value="400x400">400×400 (Profile Photo)</option>
+              <option value="1128x191">1128×191 (Cover Photo)</option>
+              <option value="1200x627">1200×627 (Post Images)</option>
+            </optgroup>
+            <optgroup label="Pinterest">
+              <option value="280x280">280×280 (Profile Photo)</option>
+              <option value="800x450">800×450 (Cover Photo)</option>
+              <option value="1000x1500">1000×1500 (Pins)</option>
+            </optgroup>
+            <optgroup label="YouTube">
+              <option value="800x800">800×800 (Profile Photo)</option>
+              <option value="2560x1440">2560×1440 (Banner)</option>
+              <option value="1280x720">1280×720 (Video Thumbnail)</option>
+            </optgroup>
+            <optgroup label="TikTok & Snapchat">
+              <option value="320x320">320×320 (Snapchat Profile)</option>
+              <option value="375x278">375×278 (Snapchat Banner)</option>
+              <option value="1080x1920">1080×1920 (TikTok Videos/Snapchat Ads)</option>
+            </optgroup>
+            <optgroup label="Bluesky">
+              <option value="1000x1000">1000×1000 (Profile Photo)</option>
+            </optgroup>
+            <optgroup label="Standard Sizes">
+              <option value="512x512">512×512 (AI Standard Square)</option>
+              <option value="768x768">768×768 (High Quality Square)</option>
+              <option value="1024x1024">1024×1024 (Ultra HD Square)</option>
+              <option value="512x768">512×768 (AI Portrait)</option>
+              <option value="768x1024">768×1024 (AI Portrait HD)</option>
+              <option value="768x512">768×512 (AI Landscape)</option>
+              <option value="1024x768">1024×768 (AI Landscape HD)</option>
+            </optgroup>
+          </select>
+          <small>Choose the aspect ratio for your use case</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="seed">🎲 Seed</label>
+          <div class="seed-input-group">
+            <input 
+              type="number" 
+              id="seed" 
+              name="seed" 
+              min="1" 
+              max="2147483638" 
+              value="42" 
+              class="seed-number"
+            >
+            <input 
+              type="range" 
+              id="seed-slider" 
+              min="1" 
+              max="2147483638" 
+              value="42" 
+              class="seed-slider"
+            >
+            <button type="button" id="random-seed" class="random-seed-btn">🎲 Random</button>
+          </div>
+          <small>Integer between 1 and 2,147,483,638. Same seed = reproducible results. Use random for variety.</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="prompt">✨ Prompt</label>
+          <textarea 
+            id="prompt" 
+            name="prompt" 
+            rows="4" 
+            placeholder="Describe the character or scene you want to generate..." 
+            required
+          ></textarea>
+          <small>Be descriptive! Include details about appearance, style, setting, etc.</small>
+        </div>
+        
+        <button type="submit" class="generate-btn">
+          <span>🎯 Generate Image</span>
+        </button>
+      </form>
+      
+      <div id="error-message" class="error-message" style="display: none;"></div>
+      
+      <div id="image-container" class="image-result" style="display: none;">
+        <h3>Generated Image</h3>
+        <div class="image-wrapper">
+          <img id="generated-image" src="" alt="Generated Image">
+        </div>
+        <div class="image-actions">
+          <a id="download-link" href="" download class="download-btn" style="display: none;">
+            📥 Download Image
+          </a>
+        </div>
+      </div>
+    </main>
+    
+    <footer>
+      <p>Powered by <a href="https://huggingface.co" target="_blank">Hugging Face</a> and <a href="https://fal.ai" target="_blank">fal.ai</a></p>
+    </footer>
+  </div>
+  
+  <script type="module" src="script.js"></script>
+</body>
+</html>
