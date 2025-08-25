@@ -16,9 +16,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY app.py index.html style.css script.js favicon.ico favicon.svg ./
 
-# Create .env file placeholder (will be overridden by environment variables)
-RUN touch .env
-
 # Expose port 5000
 EXPOSE 5000
 

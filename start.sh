@@ -11,8 +11,7 @@ docker rm -f fallora-app || true
 # Run the new container on shared_net network with environment variables
 echo "Starting falLoRA on shared_net network..."
 docker run --name fallora-app --network shared_net -d \
-  -e FAL_KEY="$FAL_KEY" \
-  -e HF_TOKEN="$HF_TOKEN" \
+  --env-file .env \
   fallora
 
 # Show status

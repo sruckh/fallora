@@ -2,12 +2,9 @@ import os
 import requests
 import json
 from flask import Flask, request, jsonify, send_from_directory, redirect, Response, render_template_string
-from dotenv import load_dotenv
 from flask_cors import CORS
 import traceback
 import time
-
-load_dotenv()
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
@@ -21,7 +18,7 @@ if not FAL_KEY:
 FAL_ENDPOINTS = {
     "fal-ai/flux-lora": "https://fal.run/fal-ai/flux-lora",
     "fal-ai/flux-kontext-lora": "https://fal.run/fal-ai/flux-kontext-lora/text-to-image", 
-    "fal-ai/wan-lora": "https://fal.run/fal-ai/wan/v2.2-a14b/text-to-image/lora",
+    "fal-ai/wan/v2.2-a14b/text-to-image/lora": "https://fal.run/fal-ai/wan/v2.2-a14b/text-to-image/lora",
     "fal-ai/qwen-image": "https://fal.run/fal-ai/qwen-image"
 }
 
@@ -59,30 +56,48 @@ def generate_image():
         prompt = data.get('prompt')
         resolution = data.get('resolution', '512x512')
         seed = data.get('seed')
+        negative_prompt = data.get('negative_prompt')
         
         if not all([base_model, prompt]):
             return jsonify({'error': 'base_model and prompt are required.'}), 400
             
         # Check if we have at least one valid LoRA with proper weight validation
         valid_loras = []
-        for lora in loras:
-            if lora.get("model", "").strip():
-                weight = lora.get("weight", 1.0)
-                # Ensure weight is a number between 0 and 2
-                try:
-                    weight = float(weight)
-                    weight = max(0.0, min(2.0, weight))
-                    # Round to hundredths place
-                    weight = round(weight, 2)
+        if base_model == "fal-ai/wan/v2.2-a14b/text-to-image/lora":
+            for lora in loras:
+                if lora.get("model", "").strip():
                     valid_loras.append({
-                        "model": lora["model"].strip(),
-                        "weight": weight
+                        "path": lora["model"].strip(),
+                        "scale": 1,
+                        "transformer": lora["transformer"]
                     })
-                except (ValueError, TypeError):
-                    return jsonify({'error': f'Invalid weight value for LoRA: {lora.get("model", "unknown")}'}), 400
+        else:
+            for lora in loras:
+                if lora.get("model", "").strip():
+                    weight = lora.get("weight", 1.0)
+                    # Ensure weight is a number between 0 and 2
+                    try:
+                        weight = float(weight)
+                        weight = max(0.0, min(2.0, weight))
+                        # Round to hundredths place
+                        weight = round(weight, 2)
+                        valid_loras.append({
+                            "path": lora["model"].strip(),
+                            "scale": weight
+                        })
+                    except (ValueError, TypeError):
+                        return jsonify({'error': f'Invalid weight value for LoRA: {lora.get("model", "unknown")}'}), 400
                     
         if not valid_loras:
             return jsonify({'error': 'At least one LoRA model is required.'}), 400
+            
+        # For wan model, require both high and low LoRAs
+        if base_model == "fal-ai/wan/v2.2-a14b/text-to-image/lora":
+            transformers = [lora.get("transformer") for lora in valid_loras]
+            if "high" not in transformers or "low" not in transformers:
+                return jsonify({'error': 'wan/v2.2-a14b model requires both high and low LoRAs'}), 400
+            if len(valid_loras) != 2:
+                return jsonify({'error': 'wan/v2.2-a14b model requires exactly 2 LoRAs (high and low)'}), 400
             
         # Validate seed
         if seed is not None:
@@ -108,6 +123,7 @@ def generate_image():
         print(f"Resolution: {width}x{height}")
         print(f"Seed: {seed}")
         print(f"Prompt: {prompt}")
+        print(f"Negative Prompt: {negative_prompt}")
         
         # Prepare fal.ai request payload
         payload = {
@@ -126,35 +142,42 @@ def generate_image():
         # Add seed if provided
         if seed is not None:
             payload["seed"] = seed
+
+        # Add negative prompt if provided
+        if negative_prompt:
+            payload["negative_prompt"] = negative_prompt
         
         # Add LoRA configuration based on model type
-        if base_model in ["fal-ai/flux-lora", "fal-ai/flux-kontext-lora"]:
+        if base_model == "fal-ai/wan/v2.2-a14b/text-to-image/lora":
+            # Override payload for wan model to match fal.ai documentation
+            payload = {
+                "prompt": prompt,
+                "loras": valid_loras,
+                "image_size": {
+                    "width": width,
+                    "height": height
+                },
+                "num_inference_steps": 27,  # wan default per docs
+                "guidance_scale": 3.5,      # wan default per docs
+                "guidance_scale_2": 4,      # wan default per docs
+                "shift": 2,                 # wan default per docs
+                "enable_safety_checker": False
+            }
+            
+            # Add seed if provided
+            if seed is not None:
+                payload["seed"] = seed
+
+            # Add negative prompt if provided
+            if negative_prompt:
+                payload["negative_prompt"] = negative_prompt
+
+        elif base_model in ["fal-ai/flux-lora", "fal-ai/flux-kontext-lora"]:
             # FLUX LoRA format
-            payload["loras"] = [
-                {
-                    "path": lora["model"],
-                    "scale": lora["weight"]
-                }
-                for lora in valid_loras
-            ]
-        elif base_model == "fal-ai/wan-lora":
-            # WAN LoRA format  
-            payload["loras"] = [
-                {
-                    "path": lora["model"],
-                    "scale": lora["weight"]
-                }
-                for lora in valid_loras
-            ]
+            payload["loras"] = valid_loras
         elif base_model == "fal-ai/qwen-image":
             # Qwen LoRA format with different settings
-            payload["loras"] = [
-                {
-                    "path": lora["model"], 
-                    "scale": lora["weight"]
-                }
-                for lora in valid_loras
-            ]
+            payload["loras"] = valid_loras
             # Qwen-specific parameters
             payload["guidance_scale"] = 2.5
             payload["num_inference_steps"] = 50
@@ -185,12 +208,18 @@ def generate_image():
         print(f"fal.ai result keys: {result.keys()}")
         
         # Extract image URL from fal.ai response
-        images = result.get('images', [])
-        if not images:
-            return jsonify({'error': 'No images generated'}), 500
+        # wan model returns 'image' object, other models return 'images' array
+        if base_model == "fal-ai/wan/v2.2-a14b/text-to-image/lora":
+            image_data = result.get('image')
+            if not image_data:
+                return jsonify({'error': 'No image generated'}), 500
+            image_url = image_data.get('url')
+        else:
+            images = result.get('images', [])
+            if not images:
+                return jsonify({'error': 'No images generated'}), 500
+            image_url = images[0].get('url')
             
-        # Return the first image URL
-        image_url = images[0].get('url')
         if not image_url:
             return jsonify({'error': 'No image URL in response'}), 500
             

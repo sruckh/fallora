@@ -7,6 +7,9 @@ const errorMessage = document.getElementById('error-message');
 const loraContainer = document.getElementById('lora-container');
 const addLoraBtn = document.getElementById('add-lora');
 const loadingOverlay = document.getElementById('loading-overlay');
+const baseModelSelect = document.getElementById('base-model');
+const loraContainerDynamic = document.getElementById('lora-container-dynamic');
+const loraContainerStatic = document.getElementById('lora-container-static');
 
 // Seed controls
 const seedInput = document.getElementById('seed');
@@ -14,6 +17,7 @@ const seedSlider = document.getElementById('seed-slider');
 const randomSeedBtn = document.getElementById('random-seed');
 
 function showError(message) {
+  console.error("Showing error:", message);
   errorMessage.textContent = message;
   errorMessage.style.display = 'block';
   setTimeout(() => {
@@ -31,13 +35,14 @@ function showSuccess(message) {
   }, 3000);
 }
 
-async function generateImage(baseModel, loras, prompt, resolution, seed) {
+async function generateImage(baseModel, loras, prompt, resolution, seed, negativePrompt) {
   try {
     console.log(`Generating image with base model: ${baseModel}`);
     console.log(`LoRAs:`, loras);
     console.log(`Prompt: ${prompt}`);
     console.log(`Resolution: ${resolution}`);
     console.log(`Seed: ${seed}`);
+    console.log(`Negative Prompt: ${negativePrompt}`);
     
     const response = await fetch('/api/generate', {
       method: 'POST',
@@ -49,7 +54,8 @@ async function generateImage(baseModel, loras, prompt, resolution, seed) {
         loras: loras,
         prompt: prompt,
         resolution: resolution,
-        seed: seed
+        seed: seed,
+        negative_prompt: negativePrompt
       })
     });
 
@@ -109,23 +115,37 @@ function updateRemoveButtons() {
 }
 
 function collectLoraData() {
-  const entries = loraContainer.querySelectorAll('.lora-entry');
-  const loras = [];
-  
-  entries.forEach(entry => {
-    const model = entry.querySelector('.lora-model').value.trim();
-    const weightValue = entry.querySelector('.lora-weight').value;
-    const weight = parseFloat(weightValue) || 1.0;
-    
-    // Round to hundredths place to ensure proper precision
-    const roundedWeight = Math.round(weight * 100) / 100;
-    
-    if (model) {
-      loras.push({ model, weight: roundedWeight });
+  const baseModel = baseModelSelect.value;
+  if (baseModel === 'fal-ai/wan/v2.2-a14b/text-to-image/lora') {
+    const lowLora = document.getElementById('lora-low').value.trim();
+    const highLora = document.getElementById('lora-high').value.trim();
+    const loras = [];
+    if (lowLora) {
+        loras.push({ model: lowLora, transformer: 'low' });
     }
-  });
-  
-  return loras;
+    if (highLora) {
+        loras.push({ model: highLora, transformer: 'high' });
+    }
+    return loras;
+  } else {
+    const entries = loraContainer.querySelectorAll('.lora-entry');
+    const loras = [];
+    
+    entries.forEach(entry => {
+      const model = entry.querySelector('.lora-model').value.trim();
+      const weightValue = entry.querySelector('.lora-weight').value;
+      const weight = parseFloat(weightValue) || 1.0;
+      
+      // Round to hundredths place to ensure proper precision
+      const roundedWeight = Math.round(weight * 100) / 100;
+      
+      if (model) {
+        loras.push({ model, weight: roundedWeight });
+      }
+    });
+    
+    return loras;
+  }
 }
 
 // Seed functionality
@@ -148,6 +168,19 @@ function validateSeed(value) {
 // Event listeners
 addLoraBtn.addEventListener('click', addLoraEntry);
 
+baseModelSelect.addEventListener('change', (e) => {
+  const isWanLora = e.target.value === 'fal-ai/wan/v2.2-a14b/text-to-image/lora';
+  
+  loraContainerDynamic.style.display = isWanLora ? 'none' : 'block';
+  loraContainerStatic.style.display = isWanLora ? 'block' : 'none';
+
+  const dynamicInputs = loraContainerDynamic.querySelectorAll('input');
+  dynamicInputs.forEach(input => input.required = !isWanLora);
+
+  const staticInputs = loraContainerStatic.querySelectorAll('input');
+  staticInputs.forEach(input => input.required = isWanLora);
+});
+
 // Seed event listeners
 seedInput.addEventListener('input', (e) => {
   if (validateSeed(e.target.value)) {
@@ -166,13 +199,17 @@ randomSeedBtn.addEventListener('click', () => {
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
+  console.log("Form submitted");
   
   const formData = new FormData(form);
   const baseModel = formData.get('base-model');
   const prompt = formData.get('prompt');
   const resolution = formData.get('resolution');
   const seed = parseInt(formData.get('seed'));
+  const negativePrompt = formData.get('negative-prompt');
   const loras = collectLoraData();
+
+  console.log("Collected data:", { baseModel, prompt, resolution, seed, negativePrompt, loras });
 
   // Validation
   if (!baseModel || !prompt) {
@@ -190,6 +227,8 @@ form.addEventListener('submit', async (e) => {
     return;
   }
 
+  console.log("Validation passed");
+
   // UI updates - show loading overlay
   generateButton.disabled = true;
   loadingOverlay.classList.add('show');
@@ -197,7 +236,9 @@ form.addEventListener('submit', async (e) => {
   errorMessage.style.display = 'none';
 
   try {
-    const result = await generateImage(baseModel, loras, prompt, resolution, seed);
+    console.log("Calling generateImage function");
+    const result = await generateImage(baseModel, loras, prompt, resolution, seed, negativePrompt);
+    console.log("generateImage function returned:", result);
     
     if (result.images && result.images.length > 0) {
       const imageUrl = result.images[0].url;
@@ -222,6 +263,7 @@ form.addEventListener('submit', async (e) => {
     console.error('Generation error:', error);
     showError(error.message);
   } finally {
+    console.log("Finally block executed");
     generateButton.disabled = false;
     loadingOverlay.classList.remove('show');
   }
@@ -229,5 +271,7 @@ form.addEventListener('submit', async (e) => {
 
 // Initialize the interface
 document.addEventListener('DOMContentLoaded', () => {
+  console.log("DOM content loaded");
   updateRemoveButtons();
+  baseModelSelect.dispatchEvent(new Event('change'));
 });
