@@ -21,7 +21,7 @@ if not CIVITAI_TOKEN:
 
 # Civitai curated LoRA models organized by base model compatibility
 CIVITAI_LORAS = {
-    # FLUX models (flux-lora, flux-kontext-lora, qwen-image)
+    # FLUX models (flux-lora only - other models have different LoRA compatibility)
     "flux": {
         "Authentic Portrait Photography": "2125186",
         "Realism cinematic photographic style": "953083", 
@@ -45,10 +45,11 @@ CIVITAI_LORAS = {
 
 # Map base models to their Civitai LoRA categories
 BASE_MODEL_TO_CIVITAI = {
-    "fal-ai/flux-lora": "flux",
-    "fal-ai/flux-kontext-lora": "flux", 
-    "fal-ai/qwen-image": "flux",
-    "fal-ai/wan/v2.2-a14b/text-to-image/lora": "wan"
+    "fal-ai/flux-lora": "flux"
+    # Only flux-lora supported - other models have different LoRA compatibility:
+    # - qwen-image: Not a flux model
+    # - flux-kontext-lora: Different LoRA architecture 
+    # - wan models: Completely different architecture
 }
 
 # fal.ai LoRA endpoints
