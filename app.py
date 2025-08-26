@@ -14,6 +14,43 @@ FAL_KEY = os.environ.get("FAL_KEY")
 if not FAL_KEY:
     print("ERROR: FAL_KEY environment variable not set!")
 
+# Civitai API configuration
+CIVITAI_TOKEN = os.environ.get("CIVITAI_TOKEN")
+if not CIVITAI_TOKEN:
+    print("WARNING: CIVITAI_TOKEN environment variable not set - Civitai LoRAs will not be available")
+
+# Civitai curated LoRA models organized by base model compatibility
+CIVITAI_LORAS = {
+    # FLUX models (flux-lora, flux-kontext-lora, qwen-image)
+    "flux": {
+        "Authentic Portrait Photography": "2125186",
+        "Realism cinematic photographic style": "953083", 
+        "Natural Realism": "2061874",
+        "Unflux Realism": "1354203",
+        "XLabs Flux Realism": "706528",
+        "Facebook Quality Photos": "1046073",
+        "Pandora | RAW Realism": "1943855",
+        "UltraRealistic Lora Project": "1026423",
+        "Detailed Perfection style": "931225",
+        "Photorealistic Skin": "1301668",
+        "Cinematic Shot": "857668",
+        "Realistic Amplifier for UltraReal Fine-Tune": "1351520",
+        "FLUX -– Polyhedron_all": "812320"
+    },
+    # wan model - currently no specific LoRAs
+    "wan": {
+        # Future wan-specific LoRAs can be added here
+    }
+}
+
+# Map base models to their Civitai LoRA categories
+BASE_MODEL_TO_CIVITAI = {
+    "fal-ai/flux-lora": "flux",
+    "fal-ai/flux-kontext-lora": "flux", 
+    "fal-ai/qwen-image": "flux",
+    "fal-ai/wan/v2.2-a14b/text-to-image/lora": "wan"
+}
+
 # fal.ai LoRA endpoints
 FAL_ENDPOINTS = {
     "fal-ai/flux-lora": "https://fal.run/fal-ai/flux-lora",
@@ -66,8 +103,20 @@ def generate_image():
         if base_model == "fal-ai/wan/v2.2-a14b/text-to-image/lora":
             for lora in loras:
                 if lora.get("model", "").strip():
+                    lora_path = lora["model"].strip()
+                    
+                    # Handle Civitai LoRAs
+                    if lora.get("is_civitai", False):
+                        civitai_name = lora.get("civitai_name", "")
+                        civitai_category = BASE_MODEL_TO_CIVITAI.get(base_model)
+                        if civitai_category and civitai_name in CIVITAI_LORAS.get(civitai_category, {}) and CIVITAI_TOKEN:
+                            model_id = CIVITAI_LORAS[civitai_category][civitai_name]
+                            lora_path = f"https://civitai.com/api/download/models/{model_id}?token={CIVITAI_TOKEN}"
+                        else:
+                            return jsonify({'error': f'Civitai LoRA not available for {base_model}: {civitai_name}'}), 400
+                    
                     valid_loras.append({
-                        "path": lora["model"].strip(),
+                        "path": lora_path,
                         "scale": 1,
                         "transformer": lora["transformer"]
                     })
@@ -75,6 +124,18 @@ def generate_image():
             for lora in loras:
                 if lora.get("model", "").strip():
                     weight = lora.get("weight", 1.0)
+                    lora_path = lora["model"].strip()
+                    
+                    # Handle Civitai LoRAs
+                    if lora.get("is_civitai", False):
+                        civitai_name = lora.get("civitai_name", "")
+                        civitai_category = BASE_MODEL_TO_CIVITAI.get(base_model)
+                        if civitai_category and civitai_name in CIVITAI_LORAS.get(civitai_category, {}) and CIVITAI_TOKEN:
+                            model_id = CIVITAI_LORAS[civitai_category][civitai_name]
+                            lora_path = f"https://civitai.com/api/download/models/{model_id}?token={CIVITAI_TOKEN}"
+                        else:
+                            return jsonify({'error': f'Civitai LoRA not available for {base_model}: {civitai_name}'}), 400
+                    
                     # Ensure weight is a number between 0 and 2
                     try:
                         weight = float(weight)
@@ -82,7 +143,7 @@ def generate_image():
                         # Round to hundredths place
                         weight = round(weight, 2)
                         valid_loras.append({
-                            "path": lora["model"].strip(),
+                            "path": lora_path,
                             "scale": weight
                         })
                     except (ValueError, TypeError):
@@ -249,6 +310,43 @@ def get_available_models():
     return jsonify({
         'models': list(FAL_ENDPOINTS.keys()),
         'endpoints': FAL_ENDPOINTS
+    })
+
+@app.route('/api/civitai-loras', methods=['GET'])
+def get_civitai_loras():
+    """Return available Civitai LoRA models for a specific base model"""
+    base_model = request.args.get('base_model')
+    
+    if not CIVITAI_TOKEN:
+        return jsonify({
+            'loras': {},
+            'available': False,
+            'message': 'Civitai token not configured'
+        })
+    
+    if not base_model:
+        # Return all categories for initial load
+        return jsonify({
+            'loras': CIVITAI_LORAS,
+            'available': True,
+            'base_model_mapping': BASE_MODEL_TO_CIVITAI
+        })
+    
+    # Get LoRAs for specific base model
+    civitai_category = BASE_MODEL_TO_CIVITAI.get(base_model)
+    if not civitai_category:
+        return jsonify({
+            'loras': {},
+            'available': True,
+            'message': f'No Civitai LoRAs available for {base_model}'
+        })
+    
+    compatible_loras = CIVITAI_LORAS.get(civitai_category, {})
+    return jsonify({
+        'loras': compatible_loras,
+        'available': True,
+        'category': civitai_category,
+        'base_model': base_model
     })
 
 @app.route('/api/download', methods=['GET'])

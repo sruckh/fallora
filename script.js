@@ -132,15 +132,27 @@ function collectLoraData() {
     const loras = [];
     
     entries.forEach(entry => {
-      const model = entry.querySelector('.lora-model').value.trim();
+      const modelInput = entry.querySelector('.lora-model');
       const weightValue = entry.querySelector('.lora-weight').value;
       const weight = parseFloat(weightValue) || 1.0;
       
       // Round to hundredths place to ensure proper precision
       const roundedWeight = Math.round(weight * 100) / 100;
       
-      if (model) {
-        loras.push({ model, weight: roundedWeight });
+      // Check if this is a Civitai LoRA
+      if (entry.dataset.isCivitai === 'true') {
+        const civitaiName = entry.dataset.civitaiName;
+        loras.push({ 
+          model: civitaiName, // Use the actual name for backend processing
+          weight: roundedWeight,
+          is_civitai: true,
+          civitai_name: civitaiName
+        });
+      } else {
+        const model = modelInput.value.trim();
+        if (model) {
+          loras.push({ model, weight: roundedWeight });
+        }
       }
     });
     
@@ -179,6 +191,9 @@ baseModelSelect.addEventListener('change', (e) => {
 
   const staticInputs = loraContainerStatic.querySelectorAll('input');
   staticInputs.forEach(input => input.required = isWanLora);
+  
+  // Update Civitai LoRAs based on selected base model
+  updateCivitaiForBaseModel();
 });
 
 // Seed event listeners
@@ -269,9 +284,171 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
+// Civitai LoRA functionality
+const civitaiLoraSelect = document.getElementById('civitai-lora-select');
+const civitaiLoraWeight = document.getElementById('civitai-lora-weight');
+const addCivitaiLoraBtn = document.getElementById('add-civitai-lora');
+const civitaiSection = document.getElementById('civitai-lora-select').closest('.form-group');
+
+let baseModelMapping = {}; // Store the base model to category mapping
+
+async function loadCivitaiLoras(baseModel = null) {
+  try {
+    const url = baseModel ? `/api/civitai-loras?base_model=${encodeURIComponent(baseModel)}` : '/api/civitai-loras';
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to load Civitai LoRAs: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (!data.available) {
+      console.log('Civitai LoRAs not available - token not configured');
+      hideCivitaiSection();
+      return;
+    }
+    
+    // Store base model mapping for future reference
+    if (data.base_model_mapping) {
+      baseModelMapping = data.base_model_mapping;
+    }
+    
+    // Clear existing options except the first one
+    while (civitaiLoraSelect.children.length > 1) {
+      civitaiLoraSelect.removeChild(civitaiLoraSelect.lastChild);
+    }
+    
+    // If no base model specified or no LoRAs available for this model
+    if (!baseModel || !data.loras || Object.keys(data.loras).length === 0) {
+      if (baseModel) {
+        console.log(`No Civitai LoRAs available for ${baseModel}`);
+        hideCivitaiSection();
+      }
+      return;
+    }
+    
+    // Show section and populate dropdown
+    showCivitaiSection();
+    Object.keys(data.loras).forEach(loraName => {
+      const option = document.createElement('option');
+      option.value = loraName;
+      option.textContent = loraName;
+      civitaiLoraSelect.appendChild(option);
+    });
+    
+    console.log(`Civitai LoRAs loaded for ${baseModel}:`, Object.keys(data.loras));
+    
+  } catch (error) {
+    console.error('Failed to load Civitai LoRAs:', error);
+    hideCivitaiSection();
+  }
+}
+
+function showCivitaiSection() {
+  if (civitaiSection) {
+    civitaiSection.style.display = 'block';
+  }
+}
+
+function hideCivitaiSection() {
+  if (civitaiSection) {
+    civitaiSection.style.display = 'none';
+  }
+  // Reset controls
+  civitaiLoraSelect.value = '';
+  civitaiLoraWeight.value = '1.00';
+  enableCivitaiControls();
+}
+
+function updateCivitaiForBaseModel() {
+  const selectedBaseModel = baseModelSelect.value;
+  const hasCompatibleLoras = baseModelMapping[selectedBaseModel];
+  
+  if (hasCompatibleLoras) {
+    loadCivitaiLoras(selectedBaseModel);
+  } else {
+    hideCivitaiSection();
+  }
+}
+
+function enableCivitaiControls() {
+  const selectedLora = civitaiLoraSelect.value;
+  const isSelected = selectedLora !== '';
+  
+  civitaiLoraWeight.disabled = !isSelected;
+  addCivitaiLoraBtn.disabled = !isSelected;
+  
+  if (isSelected) {
+    civitaiLoraWeight.focus();
+  }
+}
+
+function addCivitaiLoraToList() {
+  const selectedLora = civitaiLoraSelect.value;
+  const weight = parseFloat(civitaiLoraWeight.value) || 1.0;
+  
+  if (!selectedLora) {
+    showError('Please select a Civitai LoRA first.');
+    return;
+  }
+  
+  // Create a new LoRA entry with Civitai data
+  const loraEntry = document.createElement('div');
+  loraEntry.className = 'lora-entry';
+  loraEntry.innerHTML = `
+    <input 
+      type="text" 
+      class="lora-model" 
+      value="🎨 ${selectedLora}" 
+      readonly
+    >
+    <input 
+      type="number" 
+      class="lora-weight" 
+      min="0" 
+      max="2" 
+      step="0.01" 
+      value="${weight.toFixed(2)}"
+    >
+    <button type="button" class="remove-lora">×</button>
+  `;
+  
+  // Store Civitai metadata
+  loraEntry.dataset.isCivitai = 'true';
+  loraEntry.dataset.civitaiName = selectedLora;
+  
+  // Add remove functionality
+  const removeBtn = loraEntry.querySelector('.remove-lora');
+  removeBtn.addEventListener('click', () => {
+    loraEntry.remove();
+    updateRemoveButtons();
+  });
+  
+  loraContainer.appendChild(loraEntry);
+  updateRemoveButtons();
+  
+  // Reset Civitai selection
+  civitaiLoraSelect.value = '';
+  civitaiLoraWeight.value = '1.00';
+  enableCivitaiControls();
+  
+  showSuccess(`Added Civitai LoRA: ${selectedLora}`);
+}
+
+
+// Event listeners for Civitai functionality
+civitaiLoraSelect.addEventListener('change', enableCivitaiControls);
+addCivitaiLoraBtn.addEventListener('click', addCivitaiLoraToList);
+
 // Initialize the interface
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   console.log("DOM content loaded");
   updateRemoveButtons();
+  
+  // Load base model mapping first
+  await loadCivitaiLoras(); // This loads the mapping
+  
+  // Then trigger base model change to set up Civitai for default model
   baseModelSelect.dispatchEvent(new Event('change'));
+  enableCivitaiControls();
 });
