@@ -291,13 +291,175 @@
 
   <div class="container mx-auto max-w-7xl p-4">
     <header class="text-center my-8">
-      <h1 class="text-5xl font-bold">🎨 falLoRA</h1>
-      <p class="text-gray-400">Generate character images using Hugging Face LoRA models via fal.ai</p>
+      <div class="flex justify-between items-start">
+        <div class="flex-1">
+          <h1 class="text-5xl font-bold">🎨 falLoRA</h1>
+          <p class="text-gray-400">Generate character images using Hugging Face LoRA models via fal.ai</p>
+        </div>
+        <div class="ml-4">
+          <button id="help-button" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2" title="Press F1 for help">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            How-To Guide
+          </button>
+        </div>
+      </div>
     </header>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left Panel: Generation Form -->
-      <div class="lg:col-span-2">
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <!-- Left Panel: Reference Mode -->
+      <div class="xl:col-span-1">
+        <div class="bg-gray-800 rounded-lg shadow-lg p-6 overflow-y-auto" style="height: calc(100vh - 460px); min-height: 540px; max-height: calc(100vh - 300px);">
+          <h2 class="text-xl font-bold mb-4">🖼️ Reference Mode</h2>
+
+          <!-- Upload Area -->
+          <div class="form-group">
+            <div class="flex items-center justify-between mb-2">
+              <label class="block text-sm font-medium text-gray-300">Reference Image</label>
+              <div class="flex items-center gap-2">
+                <span class="text-sm text-gray-400">Enable</span>
+                <input type="checkbox" id="reference-toggle" class="rounded">
+              </div>
+            </div>
+
+            <div id="upload-area" class="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center cursor-pointer hover:border-gray-500 transition-colors">
+              <input type="file" id="reference-upload" accept="image/*" class="hidden">
+              <div class="upload-content">
+                <svg class="mx-auto h-12 w-12 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <p class="text-sm text-gray-300">Drop image here or click to upload</p>
+                <p class="text-xs text-gray-500">PNG, JPG up to 10MB</p>
+              </div>
+            </div>
+
+            <!-- Image Preview -->
+            <div id="reference-preview" class="hidden mt-4">
+              <div class="space-y-4">
+                <div>
+                  <p class="text-sm text-gray-400 mb-2">Reference Image</p>
+                  <img id="reference-image" class="w-full rounded-lg border border-gray-600">
+                  <p class="text-xs text-green-400 mt-2">✅ fal.ai will process depth automatically</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Physical Attributes Section -->
+          <div id="attributes-section" class="form-group mt-4 hidden">
+            <div class="bg-gray-700/30 rounded-md p-4 border border-gray-600">
+              <div class="mb-3">
+                <label class="block text-sm font-medium text-gray-300 mb-2">👤 Physical Attributes (Optional)</label>
+                <span class="text-xs text-green-400 bg-green-900/30 px-2 py-1 rounded inline-block">Override AI</span>
+              </div>
+              <p class="text-xs text-gray-400 mb-3">Select physical characteristics to override AI detection. Set these BEFORE analyzing the image.</p>
+
+              <div class="grid grid-cols-1 gap-3">
+                <div>
+                  <label for="skin-color" class="block text-xs text-gray-400 mb-1">Race/Skin Color</label>
+                  <select id="skin-color" class="w-full bg-gray-700 border-gray-600 rounded-md py-2 px-3 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500">
+                    <option value="">Any</option>
+                    <option value="white">White/Caucasian</option>
+                    <option value="black">Black/African American</option>
+                    <option value="hispanic">Hispanic/Latino</option>
+                    <option value="asian">Asian</option>
+                    <option value="middle eastern">Middle Eastern</option>
+                    <option value="indian">Indian/South Asian</option>
+                    <option value="mixed race">Mixed Race</option>
+                    <option value="mediterranean">Mediterranean</option>
+                    <option value="native american">Native American</option>
+                    <option value="pacific islander">Pacific Islander</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="hair-color" class="block text-xs text-gray-400 mb-1">Hair Color</label>
+                  <select id="hair-color" class="w-full bg-gray-700 border-gray-600 rounded-md py-2 px-3 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500">
+                    <option value="">Any</option>
+                    <option value="blonde">Blonde</option>
+                    <option value="brunette">Brunette</option>
+                    <option value="black">Black</option>
+                    <option value="red">Red</option>
+                    <option value="auburn">Auburn</option>
+                    <option value="gray">Gray</option>
+                    <option value="white">White</option>
+                    <option value="colorful">Colorful</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="hair-style" class="block text-xs text-gray-400 mb-1">Hair Style</label>
+                  <select id="hair-style" class="w-full bg-gray-700 border-gray-600 rounded-md py-2 px-3 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500">
+                    <option value="">Any</option>
+                    <option value="long">Long</option>
+                    <option value="short">Short</option>
+                    <option value="medium">Medium</option>
+                    <option value="curly">Curly</option>
+                    <option value="straight">Straight</option>
+                    <option value="wavy">Wavy</option>
+                    <option value="pixie">Pixie Cut</option>
+                    <option value="bob">Bob</option>
+                    <option value="ponytail">Ponytail</option>
+                    <option value="braided">Braided</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="eye-color" class="block text-xs text-gray-400 mb-1">Eye Color</label>
+                  <select id="eye-color" class="w-full bg-gray-700 border-gray-600 rounded-md py-2 px-3 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500">
+                    <option value="">Any</option>
+                    <option value="brown">Brown</option>
+                    <option value="blue">Blue</option>
+                    <option value="green">Green</option>
+                    <option value="hazel">Hazel</option>
+                    <option value="gray">Gray</option>
+                    <option value="amber">Amber</option>
+                    <option value="violet">Violet</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI Analysis Section -->
+          <div id="ai-analysis-section" class="form-group mt-4 hidden">
+            <div class="bg-gray-700/30 rounded-md p-4 border border-gray-600">
+              <div class="flex items-center justify-between mb-3">
+                <label class="block text-sm font-medium text-gray-300">🤖 AI Scene Analysis</label>
+                <button type="button" id="analyze-image" class="bg-purple-600 hover:bg-purple-700 text-white py-2 px-3 rounded text-sm transition-colors">
+                  Analyze Image
+                </button>
+              </div>
+              <textarea id="ai-suggested-prompt" rows="4" class="w-full bg-gray-700 border-gray-600 rounded-md py-2 px-3 text-sm resize-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                        placeholder="AI-generated scene description will appear here..." readonly></textarea>
+              <div class="flex flex-wrap gap-2 mt-3">
+                <button type="button" id="use-ai-prompt" class="text-sm text-indigo-400 hover:text-indigo-300 px-2 py-1 rounded hover:bg-indigo-900/30 transition-colors">
+                  Use AI Description
+                </button>
+                <button type="button" id="append-ai-prompt" class="text-sm text-green-400 hover:text-green-300 px-2 py-1 rounded hover:bg-green-900/30 transition-colors">
+                  Append to Prompt
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reference Mode Status -->
+          <div id="reference-status" class="mt-8 p-3 bg-gray-700/50 rounded-md border border-gray-600 hidden">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+              <span class="text-sm text-green-400">Reference Mode Active</span>
+            </div>
+            <p class="text-xs text-gray-400 mt-1">Your character will be placed in the reference scene</p>
+            <button type="button" id="clear-reference" class="text-xs text-red-400 hover:text-red-300 mt-2">
+              Clear Reference
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Middle Panel: Generation Form -->
+      <div class="xl:col-span-1">
         <main class="bg-gray-800 rounded-lg shadow-lg p-6" style="height: calc(100vh - 460px); min-height: 440px;">
           <form id="generate-form">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -309,6 +471,7 @@
                 <option value="fal-ai/flux-kontext-lora">fal-ai/flux-kontext-lora</option>
                 <option value="fal-ai/wan/v2.2-a14b/text-to-image/lora">fal-ai/wan/v2.2-a14b/text-to-image/lora</option>
                 <option value="fal-ai/qwen-image">fal-ai/qwen-image</option>
+                <option value="fal-ai/flux-pro/v1/depth">fal-ai/flux-pro/v1/depth (Reference Mode)</option>
               </select>
             </div>
           </div>
@@ -451,7 +614,7 @@
       </div>
 
       <!-- Right Panel: Image History -->
-      <div class="lg:col-span-1">
+      <div class="xl:col-span-1">
         <div class="bg-gray-800 rounded-lg shadow-lg p-6 h-full" style="height: calc(100vh - 460px); min-height: 440px;">
           <div class="flex justify-between items-center mb-4">
             <h2 class="text-xl font-bold">📚 Generation History</h2>
@@ -506,6 +669,69 @@
     </div>
   </div>
 
+  <!-- Help Modal -->
+  <div id="help-modal" class="fixed inset-0 bg-black bg-opacity-75 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-gray-800 rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+      <!-- Header -->
+      <div class="flex justify-between items-center p-6 border-b border-gray-700">
+        <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+          <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+          falLoRA User Guide
+        </h2>
+        <button onclick="closeHelpModal()" class="text-gray-400 hover:text-white bg-gray-700 hover:bg-gray-600 rounded-lg p-2 transition-colors" title="Close (Esc)">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <div class="flex flex-wrap gap-2 p-4 border-b border-gray-700 bg-gray-750">
+        <button onclick="showHelpSection('getting-started')" class="help-tab px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-purple-600 text-white" data-section="getting-started">
+          Getting Started
+        </button>
+        <button onclick="showHelpSection('core-features')" class="help-tab px-4 py-2 rounded-lg text-sm font-medium transition-colors text-gray-300 hover:bg-gray-700" data-section="core-features">
+          Core Features
+        </button>
+        <button onclick="showHelpSection('reference-images')" class="help-tab px-4 py-2 rounded-lg text-sm font-medium transition-colors text-gray-300 hover:bg-gray-700" data-section="reference-images">
+          Reference Images
+        </button>
+        <button onclick="showHelpSection('loras')" class="help-tab px-4 py-2 rounded-lg text-sm font-medium transition-colors text-gray-300 hover:bg-gray-700" data-section="loras">
+          LoRA Models
+        </button>
+        <button onclick="showHelpSection('generation')" class="help-tab px-4 py-2 rounded-lg text-sm font-medium transition-colors text-gray-300 hover:bg-gray-700" data-section="generation">
+          Generation Process
+        </button>
+        <button onclick="showHelpSection('troubleshooting')" class="help-tab px-4 py-2 rounded-lg text-sm font-medium transition-colors text-gray-300 hover:bg-gray-700" data-section="troubleshooting">
+          Troubleshooting
+        </button>
+        <button onclick="showHelpSection('shortcuts')" class="help-tab px-4 py-2 rounded-lg text-sm font-medium transition-colors text-gray-300 hover:bg-gray-700" data-section="shortcuts">
+          Shortcuts
+        </button>
+      </div>
+
+      <!-- Content Area -->
+      <div class="flex-1 overflow-y-auto p-6">
+        <div id="help-content" class="prose prose-invert max-w-none">
+          <!-- Content will be dynamically loaded here -->
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="p-4 border-t border-gray-700 bg-gray-750">
+        <div class="flex justify-between items-center text-sm text-gray-400">
+          <div class="flex items-center gap-4">
+            <span>Press <kbd class="px-2 py-1 bg-gray-700 rounded text-xs">F1</kbd> to toggle help</span>
+            <span>Press <kbd class="px-2 py-1 bg-gray-700 rounded text-xs">Esc</kbd> to close</span>
+          </div>
+          <span class="text-xs">falLoRA v1.0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <style>
     /* Custom scrollbar for history */
     #image-history::-webkit-scrollbar {
@@ -553,6 +779,47 @@
     /* Fullscreen modal styles */
     #fullscreen-modal.show {
       display: flex !important;
+    }
+
+    /* Help modal styles */
+    #help-modal.show {
+      display: flex !important;
+    }
+
+    .help-tab.active {
+      background-color: rgb(147 51 234);
+      color: white;
+    }
+
+    /* Help content styling */
+    #help-content h1 { color: #e5e7eb; font-size: 1.5em; font-weight: bold; margin-top: 1.5em; margin-bottom: 0.5em; }
+    #help-content h2 { color: #d1d5db; font-size: 1.3em; font-weight: bold; margin-top: 1.3em; margin-bottom: 0.4em; }
+    #help-content h3 { color: #9ca3af; font-size: 1.1em; font-weight: semibold; margin-top: 1.1em; margin-bottom: 0.3em; }
+    #help-content p { color: #d1d5db; margin-bottom: 1em; line-height: 1.6; }
+    #help-content ul { color: #d1d5db; margin-left: 1.5em; margin-bottom: 1em; }
+    #help-content li { margin-bottom: 0.5em; }
+    #help-content code { background-color: #374151; color: #fbbf24; padding: 0.2em 0.4em; border-radius: 0.25em; font-size: 0.9em; }
+    #help-content pre { background-color: #1f2937; color: #f3f4f6; padding: 1em; border-radius: 0.5em; margin-bottom: 1em; overflow-x: auto; }
+    #help-content blockquote { border-left: 4px solid #8b5cf6; padding-left: 1em; margin: 1em 0; color: #9ca3af; }
+    #help-content kbd { background-color: #4b5563; color: white; padding: 0.2em 0.4em; border-radius: 0.25em; font-size: 0.8em; border: 1px solid #6b7280; }
+
+    /* Custom scrollbar for help content */
+    #help-content::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    #help-content::-webkit-scrollbar-track {
+      background: #374151;
+      border-radius: 4px;
+    }
+
+    #help-content::-webkit-scrollbar-thumb {
+      background: #6b7280;
+      border-radius: 4px;
+    }
+
+    #help-content::-webkit-scrollbar-thumb:hover {
+      background: #9ca3af;
     }
   </style>
 </body>

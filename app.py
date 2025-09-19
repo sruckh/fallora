@@ -1,6 +1,7 @@
 import os
 import requests
 import json
+import base64
 from flask import Flask, request, jsonify, send_from_directory, redirect, Response, render_template_string
 from flask_cors import CORS
 import traceback
@@ -8,6 +9,8 @@ import time
 import uuid
 import threading
 from datetime import datetime
+from PIL import Image
+import io
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
@@ -21,6 +24,20 @@ if not FAL_KEY:
 CIVITAI_TOKEN = os.environ.get("CIVITAI_TOKEN")
 if not CIVITAI_TOKEN:
     print("WARNING: CIVITAI_TOKEN environment variable not set - Civitai LoRAs will not be available")
+
+# z.ai API configuration
+Z_AI_API_KEY = os.environ.get("Z_AI_API_KEY")
+Z_AI_BASE_URL = os.environ.get("Z_AI_BASE_URL", "https://api.z.ai/api/paas/v4")
+Z_AI_MODEL = os.environ.get("Z_AI_MODEL", "glm-4.5v")
+if not Z_AI_API_KEY:
+    print("WARNING: Z_AI_API_KEY environment variable not set - AI image analysis will not be available")
+
+# Reference image configuration
+REFERENCE_IMAGE_DIR = os.environ.get("REFERENCE_IMAGE_DIR", "/tmp/fallora_uploads")
+MAX_REFERENCE_IMAGE_SIZE = int(os.environ.get("MAX_REFERENCE_IMAGE_SIZE", "10485760"))  # 10MB
+
+# Create upload directory if it doesn't exist
+os.makedirs(REFERENCE_IMAGE_DIR, exist_ok=True)
 
 # Civitai curated LoRA models organized by base model compatibility
 CIVITAI_LORAS = {
@@ -76,16 +93,34 @@ BASE_MODEL_TO_CIVITAI = {
 # fal.ai LoRA endpoints
 FAL_ENDPOINTS = {
     "fal-ai/flux-lora": "https://fal.run/fal-ai/flux-lora",
-    "fal-ai/flux-kontext-lora": "https://fal.run/fal-ai/flux-kontext-lora/text-to-image", 
+    "fal-ai/flux-kontext-lora": "https://fal.run/fal-ai/flux-kontext-lora/text-to-image",
     "fal-ai/wan/v2.2-a14b/text-to-image/lora": "https://fal.run/fal-ai/wan/v2.2-a14b/text-to-image/lora",
-    "fal-ai/qwen-image": "https://fal.run/fal-ai/qwen-image"
+    "fal-ai/qwen-image": "https://fal.run/fal-ai/qwen-image",
+    "fal-ai/flux-pro/v1/depth": "https://fal.run/fal-ai/flux-pro/v1/depth",
+    "fal-ai/flux-general": "https://fal.run/fal-ai/flux-general",
+    "fal-ai/flux-control-lora-depth": "https://fal.run/fal-ai/flux-control-lora-depth/image-to-image"
 }
 
 # In-memory job store for async image generation
 JOB_STORE = {}
 JOB_LOCK = threading.Lock()
 
-def process_image_generation(job_id, base_model, loras, prompt, resolution, seed, negative_prompt):
+def clean_ai_prompt(raw_prompt):
+    """Clean up AI-generated prompt by removing artifacts and box markers"""
+    import re
+
+    # Remove box markers
+    cleaned = re.sub(r'<\|begin_of_box\|>|<\|end_of_box\|>', '', raw_prompt)
+
+    # Remove any remaining template brackets with content like [Subject: details]
+    cleaned = re.sub(r'\[([^\]]+)\]', r'\1', cleaned)
+
+    # Clean up extra whitespace
+    cleaned = ' '.join(cleaned.split())
+
+    return cleaned.strip()
+
+def process_image_generation(job_id, base_model, loras, prompt, resolution, seed, negative_prompt, reference_image_url=None):
     """Background function to process image generation"""
     try:
         with JOB_LOCK:
@@ -191,17 +226,26 @@ def process_image_generation(job_id, base_model, loras, prompt, resolution, seed
         except ValueError:
             raise Exception('Invalid resolution format. Use WIDTHxHEIGHT (e.g., 512x512)')
         
+        # Determine which endpoint to use based on reference image presence
+        actual_model = base_model
+        if reference_image_url and base_model in ["fal-ai/flux-lora", "fal-ai/flux-kontext-lora"]:
+            # Switch to FLUX Control LoRA Depth for reference image mode
+            actual_model = "fal-ai/flux-control-lora-depth"
+            print(f"Job {job_id}: Reference image detected, switching to FLUX Control LoRA Depth")
+
         # Get the appropriate fal.ai endpoint
-        endpoint_url = FAL_ENDPOINTS.get(base_model)
+        endpoint_url = FAL_ENDPOINTS.get(actual_model)
         if not endpoint_url:
-            raise Exception(f'Unsupported model: {base_model}')
-            
+            raise Exception(f'Unsupported model: {actual_model}')
+
         print(f"Job {job_id}: Using endpoint: {endpoint_url}")
+        print(f"Job {job_id}: Model: {actual_model}")
         print(f"Job {job_id}: LoRAs: {loras}")
         print(f"Job {job_id}: Resolution: {width}x{height}")
         print(f"Job {job_id}: Seed: {seed}")
         print(f"Job {job_id}: Prompt: {prompt}")
         print(f"Job {job_id}: Negative Prompt: {negative_prompt}")
+        print(f"Job {job_id}: Reference Image: {reference_image_url}")
         
         # Prepare fal.ai request payload
         payload = {
@@ -259,7 +303,39 @@ def process_image_generation(job_id, base_model, loras, prompt, resolution, seed
             # Qwen-specific parameters
             payload["guidance_scale"] = 2.5
             payload["num_inference_steps"] = 50
-            
+        elif actual_model == "fal-ai/flux-control-lora-depth":
+            # FLUX Control LoRA Depth format (reference image mode with LoRA support)
+            if reference_image_url:
+                # Convert relative URL to full URL for fal.ai
+                if reference_image_url.startswith('/api/reference-images/'):
+                    # Convert to absolute URL (fal.ai needs accessible URL)
+                    reference_image_url = f"https://fallora.gemneye.info{reference_image_url}"
+
+                # Required parameters for flux-control-lora-depth API
+                payload["image_url"] = reference_image_url  # Color reference image
+                payload["control_lora_image_url"] = reference_image_url  # Depth control image (same image)
+                payload["control_lora_strength"] = 0.8  # Optional: strength of style control
+                payload["strength"] = 0.85  # Optional: image transformation intensity (default: 0.85)
+
+            # Add LoRAs
+            payload["loras"] = valid_loras
+
+            # FLUX Control LoRA Depth specific parameters
+            payload["guidance_scale"] = 3.5
+            payload["num_inference_steps"] = 28
+        elif base_model == "fal-ai/flux-pro/v1/depth":
+            # FLUX Pro depth format (legacy support - no LoRA compatibility)
+            if reference_image_url:
+                # Convert relative URL to full URL for fal.ai
+                if reference_image_url.startswith('/api/reference-images/'):
+                    # Convert to absolute URL (fal.ai needs accessible URL)
+                    reference_image_url = f"https://fallora.gemneye.info{reference_image_url}"
+                payload["control_image_url"] = reference_image_url
+            # Note: FLUX Pro depth does NOT support LoRAs
+            # FLUX Pro depth specific parameters
+            payload["guidance_scale"] = 3.5
+            payload["num_inference_steps"] = 28
+
         # Make request to fal.ai (increased timeout for async processing)
         headers = {
             "Authorization": f"Key {FAL_KEY}",
@@ -297,17 +373,19 @@ def process_image_generation(job_id, base_model, loras, prompt, resolution, seed
             if not images:
                 raise Exception('No images generated')
             image_url = images[0].get('url')
-            
+
         if not image_url:
             raise Exception('No image URL in response')
-        
+
         # Update job with success result
         with JOB_LOCK:
             JOB_STORE[job_id]['status'] = 'completed'
             JOB_STORE[job_id]['result'] = {
                 'images': [{'url': image_url}],
                 'metadata': {
-                    'model': base_model,
+                    'model': actual_model,  # Use actual model (might be switched for reference mode)
+                    'original_model': base_model,  # Track original model selection
+                    'reference_mode': bool(reference_image_url),  # Track if reference mode was used
                     'loras': loras,
                     'resolution': resolution,
                     'generation_time': result.get('timings', {})
@@ -353,13 +431,22 @@ def submit_generation_job():
     """Submit an async image generation job"""
     try:
         data = request.get_json()
-        
+
+        # Debug logging to see what's being received
+        app.logger.error(f"=== DEBUG /api/generate request ===")
+        app.logger.error(f"Raw request data keys: {list(data.keys())}")
+        app.logger.error(f"Raw request data: {data}")
+        app.logger.error(f"=========================================")
+
         base_model = data.get('base_model')
         loras = data.get('loras', [])
         prompt = data.get('prompt')
         resolution = data.get('resolution', '512x512')
         seed = data.get('seed')
         negative_prompt = data.get('negative_prompt')
+        reference_image_url = data.get('reference_image_url')
+
+        app.logger.error(f"Extracted reference_image_url: {reference_image_url}")
         
         if not all([base_model, prompt]):
             return jsonify({'error': 'base_model and prompt are required.'}), 400
@@ -401,14 +488,15 @@ def submit_generation_job():
                     'prompt': prompt,
                     'resolution': resolution,
                     'seed': seed,
-                    'negative_prompt': negative_prompt
+                    'negative_prompt': negative_prompt,
+                    'reference_image_url': reference_image_url
                 }
             }
         
         # Start background thread to process the image generation
         thread = threading.Thread(
             target=process_image_generation,
-            args=(job_id, base_model, loras, prompt, resolution, seed, negative_prompt)
+            args=(job_id, base_model, loras, prompt, resolution, seed, negative_prompt, reference_image_url)
         )
         thread.daemon = True
         thread.start()
@@ -548,6 +636,237 @@ def download_image():
         )
     except Exception as e:
         return jsonify({'error': f'Download failed: {str(e)}'}), 500
+
+@app.route('/api/upload-reference', methods=['POST'])
+def upload_reference_image():
+    """Upload and store reference image"""
+    try:
+        if 'reference_image' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+
+        file = request.files['reference_image']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        # Validate file type
+        if not file.content_type.startswith('image/'):
+            return jsonify({'error': 'File must be an image'}), 400
+
+        # Read and validate file size
+        file_data = file.read()
+        if len(file_data) > MAX_REFERENCE_IMAGE_SIZE:
+            return jsonify({'error': f'File too large. Maximum size is {MAX_REFERENCE_IMAGE_SIZE // (1024*1024)}MB'}), 400
+
+        # Validate image format with PIL
+        try:
+            image = Image.open(io.BytesIO(file_data))
+            image.verify()  # Verify it's a valid image
+        except Exception:
+            return jsonify({'error': 'Invalid image file'}), 400
+
+        # Generate unique filename
+        file_extension = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'jpg'
+        unique_filename = f"{uuid.uuid4()}.{file_extension}"
+        file_path = os.path.join(REFERENCE_IMAGE_DIR, unique_filename)
+
+        # Save file
+        with open(file_path, 'wb') as f:
+            f.write(file_data)
+
+        # Generate public URL (assuming we serve from /api/reference-images/)
+        image_url = f"/api/reference-images/{unique_filename}"
+
+        return jsonify({
+            'success': True,
+            'filename': unique_filename,
+            'image_url': image_url,
+            'file_size': len(file_data)
+        })
+
+    except Exception as e:
+        print(f"Error uploading reference image: {e}")
+        print(traceback.format_exc())
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+
+@app.route('/api/reference-images/<filename>')
+def serve_reference_image(filename):
+    """Serve uploaded reference images"""
+    try:
+        return send_from_directory(REFERENCE_IMAGE_DIR, filename)
+    except Exception as e:
+        return jsonify({'error': 'Image not found'}), 404
+
+@app.route('/api/analyze-image', methods=['POST'])
+def analyze_reference_image():
+    """Analyze reference image with z.ai GLM-4.5v"""
+    print("=== ANALYZE IMAGE FUNCTION CALLED ===", flush=True)
+    try:
+        print(f"Z_AI_API_KEY exists: {bool(Z_AI_API_KEY)}", flush=True)
+        if not Z_AI_API_KEY:
+            return jsonify({'error': 'AI analysis not available - Z_AI_API_KEY not configured'}), 503
+
+        data = request.get_json()
+        image_url = data.get('image_url')
+
+        # Get physical attributes for override
+        physical_attributes = data.get('physical_attributes', {})
+
+        if not image_url:
+            return jsonify({'error': 'image_url is required'}), 400
+
+        # Convert relative URL to file path
+        if image_url.startswith('/api/reference-images/'):
+            filename = image_url.split('/')[-1]
+            file_path = os.path.join(REFERENCE_IMAGE_DIR, filename)
+
+            if not os.path.exists(file_path):
+                return jsonify({'error': 'Reference image not found'}), 404
+
+            # Read and encode image as base64
+            with open(file_path, 'rb') as f:
+                image_data = f.read()
+            image_base64 = base64.b64encode(image_data).decode('utf-8')
+        else:
+            # Handle external URLs by downloading
+            try:
+                response = requests.get(image_url, timeout=30)
+                response.raise_for_status()
+                image_base64 = base64.b64encode(response.content).decode('utf-8')
+            except Exception as e:
+                return jsonify({'error': f'Failed to download image: {str(e)}'}), 400
+
+        # Build physical attributes override string
+        physical_attributes_text = ""
+        if physical_attributes:
+            attributes = []
+            if physical_attributes.get('skin_color'):
+                attributes.append(f"Ethnicity: {physical_attributes['skin_color']}")
+            if physical_attributes.get('hair_color'):
+                attributes.append(f"Hair: {physical_attributes['hair_color']}")
+            if physical_attributes.get('hair_style'):
+                attributes.append(f"Hair Style: {physical_attributes['hair_style']}")
+            if physical_attributes.get('eye_color'):
+                attributes.append(f"Eyes: {physical_attributes['eye_color']}")
+
+            if attributes:
+                physical_attributes_text = "PHYSICAL ATTRIBUTES OVERRIDE - Use these exact characteristics: " + ", ".join(attributes) + ". "
+
+        # Analyze with z.ai GLM-4.5v (following official docs format)
+        expert_prompt = """You are an expert AI Image Prompt Engineer. Analyze this image and create a detailed ultrarealistic photography prompt in 150 words or less.
+
+""" + physical_attributes_text + """If physical attributes are specified above, you MUST use those exact characteristics for the subject. Otherwise, describe what you see.
+
+Return ONLY the final prompt with this structure (replace ALL brackets with actual content):
+
+An ultrarealistic, cinematic photograph of a [describe subject: age, ethnicity, gender, hair, eyes] at [location]. The atmosphere is [mood] during [time of day] with [lighting description].
+
+The subject is dressed in [clothing and accessories] and has a [facial expression] while in a [pose]. Pay meticulous attention to realistic [skin details].
+
+The composition is framed from a [camera angle] perspective. The environment features [foreground], [midground], and [background elements]. The lighting casts [lighting effects] and the scene has [colors, materials, textures].
+
+Photographic Style: Shot on a [camera] with [lens], aperture [f-stop] for [depth of field effect]. Style: [photography genre/reference].
+
+Realism Enhancers: masterpiece, 8k, UHD, sharp focus, professional photography, high detail, photorealistic, intricate detail, physically-based rendering, accurate anatomy, detailed textures.
+
+CRITICAL: Fill in ALL brackets with specific details. Return ONLY the final prompt, no box markers, no explanations."""
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{image_base64}"
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": expert_prompt
+                    }
+                ]
+            }
+        ]
+
+        try:
+            print(f"Sending request to z.ai: {Z_AI_BASE_URL}/chat/completions")
+            print(f"Model: {Z_AI_MODEL}")
+            print(f"Messages structure: {len(messages)} messages")
+
+            response = requests.post(
+                f"{Z_AI_BASE_URL}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {Z_AI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": Z_AI_MODEL,
+                    "messages": messages,
+                    "max_tokens": 200,
+                    "thinking": {
+                        "type": "disabled"
+                    }
+                },
+                timeout=30
+            )
+
+            print(f"z.ai response status: {response.status_code}")
+
+            if response.status_code != 200:
+                error_msg = f"z.ai API error: {response.status_code}"
+                try:
+                    error_data = response.json()
+                    print(f"z.ai error data: {error_data}")
+                    error_msg += f" - {error_data.get('error', {}).get('message', 'Unknown error')}"
+                except:
+                    error_msg += f" - {response.text}"
+                print(f"z.ai API Error: {error_msg}")
+                return jsonify({'error': error_msg}), 500
+
+        except Exception as e:
+            print(f"Exception calling z.ai API: {str(e)}")
+            return jsonify({'error': f'Failed to call z.ai API: {str(e)}'}), 500
+
+        # Parse response with error handling
+        try:
+            print(f"Raw response text length: {len(response.text)}", flush=True)
+            print(f"Response content type: {response.headers.get('content-type', 'unknown')}", flush=True)
+            result = response.json()
+            print(f"Successfully parsed JSON response", flush=True)
+            print(f"z.ai response structure: {result.keys()}", flush=True)
+            print(f"Full z.ai response: {result}", flush=True)
+        except Exception as json_error:
+            print(f"ERROR: Failed to parse z.ai response as JSON: {json_error}", flush=True)
+            print(f"Raw response text: {response.text[:1000]}...", flush=True)
+            return jsonify({'error': f'Invalid JSON response from z.ai: {str(json_error)}'}), 500
+
+        # Extract prompt with error handling (thinking disabled, so content should be in standard field)
+        try:
+            message = result.get('choices', [{}])[0].get('message', {})
+            raw_prompt = message.get('content', '') or message.get('reasoning_content', '')
+            print(f"Raw prompt: '{raw_prompt[:100]}...'", flush=True)
+
+            if not raw_prompt:
+                print("ERROR: No content found in z.ai response", flush=True)
+                return jsonify({'error': 'No response from AI analysis'}), 500
+
+            # Clean up the prompt (remove box markers and any remaining brackets)
+            suggested_prompt = clean_ai_prompt(raw_prompt)
+            print(f"Cleaned prompt: '{suggested_prompt[:100]}...'", flush=True)
+
+            return jsonify({
+                'success': True,
+                'suggested_prompt': suggested_prompt.strip()
+            })
+        except Exception as extract_error:
+            print(f"ERROR: Failed to extract prompt from response: {extract_error}", flush=True)
+            print(f"Response structure for debugging: {result}", flush=True)
+            return jsonify({'error': f'Failed to extract AI response: {str(extract_error)}'}), 500
+
+    except Exception as e:
+        print(f"Error analyzing image: {e}")
+        print(traceback.format_exc())
+        return jsonify({'error': f'Analysis failed: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
