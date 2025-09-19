@@ -107,9 +107,9 @@ class ReferenceImageCropper {
 
         // Crop controls
         const resetBtn = document.getElementById('reset-crop');
-        const applyBtn = document.getElementById('apply-crop');
+        const clearBtn = document.getElementById('clear-reference');
         if (resetBtn) resetBtn.addEventListener('click', this.resetCrop.bind(this));
-        if (applyBtn) applyBtn.addEventListener('click', this.applyCrop.bind(this));
+        if (clearBtn) clearBtn.addEventListener('click', this.clearReferenceImage.bind(this));
     }
 
     setupResolutionSync() {
@@ -216,8 +216,10 @@ class ReferenceImageCropper {
             return;
         }
 
-        const width = parseInt(document.getElementById('width')?.value || 1080);
-        const height = parseInt(document.getElementById('height')?.value || 1080);
+        // Get resolution from the resolution select element
+        const resolutionSelect = document.getElementById('resolution');
+        const resolutionValue = resolutionSelect?.value || '1080x1080';
+        const [width, height] = resolutionValue.split('x').map(dim => parseInt(dim));
 
         try {
             const applyBtn = document.getElementById('apply-crop');
@@ -245,7 +247,16 @@ class ReferenceImageCropper {
                 currentReferenceImageUrl = result.cropped_url; // Update global reference URL
 
                 if (this.image) {
+                    // Store current transform settings so the image looks exactly the same
+                    const currentTransform = this.image.style.transform;
+
+                    // Load the cropped image
                     this.image.src = result.cropped_url;
+
+                    // Restore the transform settings to maintain visual consistency
+                    this.image.onload = () => {
+                        this.image.style.transform = currentTransform;
+                    };
                 }
 
                 // Show success feedback
@@ -281,6 +292,100 @@ class ReferenceImageCropper {
             this.resetCrop();
             this.updateContainerSize();
         }
+    }
+
+    async captureCurrentFrameForGeneration() {
+        if (!this.originalImageUrl) {
+            return null; // No image to capture
+        }
+
+        // Get current resolution
+        const resolutionSelect = document.getElementById('resolution');
+        const resolutionValue = resolutionSelect?.value || '1080x1080';
+        const [width, height] = resolutionValue.split('x').map(dim => parseInt(dim));
+
+        try {
+            const response = await fetch('/api/crop-reference', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    source_url: this.originalImageUrl,
+                    offset_x: this.offsetX,
+                    offset_y: this.offsetY,
+                    scale: this.scale,
+                    target_width: width,
+                    target_height: height
+                })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                this.croppedImageUrl = result.cropped_url;
+                return result.cropped_url;
+            } else {
+                console.error('Capture failed:', result.error);
+                return null;
+            }
+        } catch (error) {
+            console.error('Capture error:', error);
+            return null;
+        }
+    }
+
+    clearReferenceImage() {
+        // Clear all image data
+        this.originalImageUrl = null;
+        this.croppedImageUrl = null;
+        this.scale = 1.0;
+        this.offsetX = 0;
+        this.offsetY = 0;
+
+        // Clear the image display
+        if (this.image) {
+            this.image.src = '';
+            this.image.style.transform = '';
+        }
+
+        // Reset zoom display
+        const zoomLevelSpan = document.getElementById('zoom-level');
+        if (zoomLevelSpan) {
+            zoomLevelSpan.textContent = '100%';
+        }
+
+        // Update global reference image state
+        currentReferenceImageUrl = null;
+
+        // Show upload area and hide preview
+        const referencePreview = document.getElementById('reference-preview');
+        const uploadArea = document.querySelector('.upload-area');
+
+        if (referencePreview && uploadArea) {
+            referencePreview.style.display = 'none';
+            uploadArea.style.display = 'block';
+        }
+
+        // Hide AI analysis and attributes sections
+        const aiAnalysisSection = document.getElementById('ai-analysis-section');
+        const attributesSection = document.getElementById('attributes-section');
+
+        if (aiAnalysisSection) aiAnalysisSection.style.display = 'none';
+        if (attributesSection) attributesSection.style.display = 'none';
+
+        // Reset reference mode toggle
+        const referenceToggle = document.getElementById('reference-mode');
+        if (referenceToggle) {
+            referenceToggle.checked = false;
+        }
+
+        referenceMode = false;
+
+        // Clear localStorage
+        localStorage.removeItem('falLoRA_referenceImageUrl');
+
+        // Reset imageCropper global reference
+        imageCropper = null;
+
+        showSuccess('Reference image cleared. You can now upload a new one.');
     }
 }
 
@@ -940,11 +1045,22 @@ form.addEventListener('submit', async (e) => {
     console.log("Final currentReferenceImageUrl:", currentReferenceImageUrl);
     console.log("====================================");
 
+    // Capture current frame for generation if we have a reference image
+    let referenceImageUrlForGeneration = currentReferenceImageUrl;
+    if (imageCropper && imageCropper.originalImageUrl) {
+        console.log("Capturing current reference image frame...");
+        const capturedUrl = await imageCropper.captureCurrentFrameForGeneration();
+        if (capturedUrl) {
+            referenceImageUrlForGeneration = capturedUrl;
+            console.log("Using captured frame for generation:", capturedUrl);
+        }
+    }
+
     // Apply physical attributes to the prompt if any are selected
     const finalPrompt = combineWithPhysicalAttributes(prompt);
     console.log("Original prompt:", prompt);
     console.log("Final prompt with physical attributes:", finalPrompt);
-    const result = await generateImage(baseModel, loras, finalPrompt, resolution, seed, negativePrompt, currentReferenceImageUrl);
+    const result = await generateImage(baseModel, loras, finalPrompt, resolution, seed, negativePrompt, referenceImageUrlForGeneration);
     console.log("generateImage function returned:", result);
 
     if (result.images && result.images.length > 0) {
