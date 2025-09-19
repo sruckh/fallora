@@ -32,6 +32,257 @@ const clearReferenceBtn = document.getElementById('clear-reference');
 // Reference image state
 let currentReferenceImageUrl = null;
 let referenceMode = false;
+let imageCropper = null;
+
+// Smart Cropping Class
+class ReferenceImageCropper {
+    constructor() {
+        this.image = document.getElementById('reference-image');
+        this.container = document.getElementById('crop-container');
+        this.scale = 1.0;
+        this.offsetX = 0;
+        this.offsetY = 0;
+        this.isDragging = false;
+        this.lastMouseX = 0;
+        this.lastMouseY = 0;
+        this.originalImageUrl = null;
+        this.croppedImageUrl = null;
+
+        this.initializeEventListeners();
+        this.setupResolutionSync();
+    }
+
+    initializeEventListeners() {
+        if (!this.image || !this.container) return;
+
+        // Mouse events for panning
+        this.image.addEventListener('mousedown', this.startDrag.bind(this));
+        document.addEventListener('mousemove', this.drag.bind(this));
+        document.addEventListener('mouseup', this.endDrag.bind(this));
+
+        // Zoom controls
+        const zoomInBtn = document.getElementById('zoom-in');
+        const zoomOutBtn = document.getElementById('zoom-out');
+        if (zoomInBtn) zoomInBtn.addEventListener('click', () => this.zoom(1.2));
+        if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => this.zoom(0.8));
+
+        // Mouse wheel zoom
+        this.container.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+            this.zoom(zoomFactor);
+        });
+
+        // Keyboard controls
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || !this.originalImageUrl) return;
+
+            switch(e.key) {
+                case '+':
+                case '=':
+                    this.zoom(1.2);
+                    break;
+                case '-':
+                case '_':
+                    this.zoom(0.8);
+                    break;
+                case 'ArrowUp':
+                    this.offsetY += 10;
+                    this.updateTransform();
+                    break;
+                case 'ArrowDown':
+                    this.offsetY -= 10;
+                    this.updateTransform();
+                    break;
+                case 'ArrowLeft':
+                    this.offsetX += 10;
+                    this.updateTransform();
+                    break;
+                case 'ArrowRight':
+                    this.offsetX -= 10;
+                    this.updateTransform();
+                    break;
+            }
+        });
+
+        // Crop controls
+        const resetBtn = document.getElementById('reset-crop');
+        const applyBtn = document.getElementById('apply-crop');
+        if (resetBtn) resetBtn.addEventListener('click', this.resetCrop.bind(this));
+        if (applyBtn) applyBtn.addEventListener('click', this.applyCrop.bind(this));
+    }
+
+    setupResolutionSync() {
+        // Listen for output resolution changes
+        const resolutionSelect = document.getElementById('resolution');
+
+        if (resolutionSelect) {
+            resolutionSelect.addEventListener('change', () => {
+                this.updateContainerSize();
+            });
+        }
+    }
+
+    updateContainerSize() {
+        const resolutionSelect = document.getElementById('resolution');
+        const resolutionValue = resolutionSelect?.value || '1080x1080';
+
+        // Parse resolution from "WIDTHxHEIGHT" format
+        const [width, height] = resolutionValue.split('x').map(dim => parseInt(dim));
+
+        console.log('Resolution changed to:', width, 'x', height);
+
+        // Update container to match output aspect ratio
+        const maxSize = 300; // Maximum display size
+        const aspectRatio = width / height;
+
+        if (aspectRatio > 1) {
+            this.container.style.width = maxSize + 'px';
+            this.container.style.height = (maxSize / aspectRatio) + 'px';
+        } else {
+            this.container.style.width = (maxSize * aspectRatio) + 'px';
+            this.container.style.height = maxSize + 'px';
+        }
+
+        // Update dimension display
+        const dimensionsSpan = document.getElementById('output-dimensions');
+        if (dimensionsSpan) {
+            dimensionsSpan.textContent = `(${width}x${height})`;
+        }
+
+        // Reset crop for new aspect ratio
+        this.resetCrop();
+    }
+
+    startDrag(e) {
+        e.preventDefault();
+        this.isDragging = true;
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+        if (this.image) this.image.style.cursor = 'grabbing';
+    }
+
+    drag(e) {
+        if (!this.isDragging || !this.image) return;
+
+        const deltaX = e.clientX - this.lastMouseX;
+        const deltaY = e.clientY - this.lastMouseY;
+
+        this.offsetX += deltaX;
+        this.offsetY += deltaY;
+
+        this.updateTransform();
+
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+    }
+
+    endDrag() {
+        this.isDragging = false;
+        if (this.image) this.image.style.cursor = 'move';
+    }
+
+    zoom(factor) {
+        this.scale = Math.max(0.1, Math.min(5.0, this.scale * factor));
+        this.updateTransform();
+
+        const zoomLevelSpan = document.getElementById('zoom-level');
+        if (zoomLevelSpan) {
+            zoomLevelSpan.textContent = Math.round(this.scale * 100) + '%';
+        }
+    }
+
+    updateTransform() {
+        if (this.image) {
+            this.image.style.transform = `translate(${this.offsetX}px, ${this.offsetY}px) scale(${this.scale})`;
+        }
+    }
+
+    resetCrop() {
+        this.scale = 1.0;
+        this.offsetX = 0;
+        this.offsetY = 0;
+        this.updateTransform();
+
+        const zoomLevelSpan = document.getElementById('zoom-level');
+        if (zoomLevelSpan) {
+            zoomLevelSpan.textContent = '100%';
+        }
+    }
+
+    async applyCrop() {
+        if (!this.originalImageUrl) {
+            showError('No image loaded for cropping');
+            return;
+        }
+
+        const width = parseInt(document.getElementById('width')?.value || 1080);
+        const height = parseInt(document.getElementById('height')?.value || 1080);
+
+        try {
+            const applyBtn = document.getElementById('apply-crop');
+            const originalText = applyBtn.textContent;
+            applyBtn.textContent = 'Cropping...';
+            applyBtn.disabled = true;
+
+            const response = await fetch('/api/crop-reference', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    source_url: this.originalImageUrl,
+                    offset_x: this.offsetX,
+                    offset_y: this.offsetY,
+                    scale: this.scale,
+                    target_width: width,
+                    target_height: height
+                })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                // Update reference image with cropped version
+                this.croppedImageUrl = result.cropped_url;
+                currentReferenceImageUrl = result.cropped_url; // Update global reference URL
+
+                if (this.image) {
+                    this.image.src = result.cropped_url;
+                }
+
+                // Show success feedback
+                showSuccess('Image cropped successfully! This optimized version will be used for generation.');
+                console.log('Cropped image applied:', result.cropped_url);
+            } else {
+                showError('Crop failed: ' + result.error);
+            }
+        } catch (error) {
+            console.error('Crop error:', error);
+            showError('Crop failed: ' + error.message);
+        } finally {
+            const applyBtn = document.getElementById('apply-crop');
+            if (applyBtn) {
+                applyBtn.textContent = originalText;
+                applyBtn.disabled = false;
+            }
+        }
+    }
+
+    loadImage(imageUrl) {
+        this.originalImageUrl = imageUrl;
+        this.croppedImageUrl = null;
+        currentReferenceImageUrl = imageUrl; // Update global reference URL
+
+        if (this.image) {
+            this.image.src = imageUrl;
+            this.image.onload = () => {
+                this.resetCrop();
+                this.updateContainerSize();
+            };
+        } else {
+            this.resetCrop();
+            this.updateContainerSize();
+        }
+    }
+}
 
 // Initialize reference image functionality
 function initializeReferenceImage() {
@@ -211,10 +462,16 @@ async function handleFileUpload(file) {
 // Display reference image
 function displayReferenceImage(imageUrl, filename) {
     if (referencePreview && referenceImage) {
-        referenceImage.src = imageUrl;
-        referenceImage.alt = filename || 'Reference Image';
         referencePreview.style.display = 'block';
         uploadArea.style.display = 'none';
+
+        // Initialize smart cropper if not already done
+        if (!imageCropper) {
+            imageCropper = new ReferenceImageCropper();
+        }
+
+        // Load image into cropper
+        imageCropper.loadImage(imageUrl);
 
         // Show AI analysis and attributes sections
         if (aiAnalysisSection) aiAnalysisSection.style.display = 'block';
@@ -230,6 +487,13 @@ function removeReferenceImage() {
     if (referencePreview && uploadArea) {
         referencePreview.style.display = 'none';
         uploadArea.style.display = 'block';
+    }
+
+    // Reset cropper
+    if (imageCropper) {
+        imageCropper.originalImageUrl = null;
+        imageCropper.croppedImageUrl = null;
+        imageCropper = null;
     }
 
     // Hide AI analysis and attributes sections

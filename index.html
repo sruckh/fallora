@@ -334,13 +334,59 @@
               </div>
             </div>
 
-            <!-- Image Preview -->
+            <!-- Enhanced Reference Image with Smart Cropping -->
             <div id="reference-preview" class="hidden mt-4">
-              <div class="space-y-4">
+              <div class="grid grid-cols-1 gap-4">
+                <!-- Cropping Container -->
                 <div>
-                  <p class="text-sm text-gray-400 mb-2">Reference Image</p>
-                  <img id="reference-image" class="w-full rounded-lg border border-gray-600">
-                  <p class="text-xs text-green-400 mt-2">✅ fal.ai will process depth automatically</p>
+                  <p class="text-sm text-gray-400 mb-2">
+                    Frame Reference Image
+                    <span id="output-dimensions" class="text-xs text-blue-400">(1080x1080)</span>
+                  </p>
+
+                  <!-- Interactive Cropping Window -->
+                  <div id="crop-container" class="relative overflow-hidden border-2 border-gray-600 rounded-lg bg-gray-800 mx-auto"
+                       style="width: 300px; height: 300px;">
+
+                    <!-- Reference Image (transformable) -->
+                    <img id="reference-image" class="absolute cursor-move select-none"
+                         style="transform-origin: center; transition: transform 0.1s ease;">
+
+                    <!-- Crop Overlay -->
+                    <div class="absolute inset-0 pointer-events-none">
+                      <div class="grid grid-cols-3 grid-rows-3 h-full opacity-30">
+                        <!-- Rule of thirds grid -->
+                        <div class="border-r border-t border-gray-400"></div>
+                        <div class="border-r border-t border-gray-400"></div>
+                        <div class="border-t border-gray-400"></div>
+                        <div class="border-r border-t border-gray-400"></div>
+                        <div class="border-r border-t border-gray-400 border-dashed"></div>
+                        <div class="border-t border-gray-400"></div>
+                        <div class="border-r border-gray-400"></div>
+                        <div class="border-r border-gray-400"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Cropping Controls -->
+                  <div class="flex items-center justify-between mt-2">
+                    <div class="flex items-center gap-2">
+                      <button id="zoom-out" class="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded text-sm font-medium transition-colors">−</button>
+                      <span id="zoom-level" class="text-xs text-gray-400 w-12 text-center">100%</span>
+                      <button id="zoom-in" class="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded text-sm font-medium transition-colors">+</button>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                      <button id="reset-crop" class="bg-gray-700 hover:bg-gray-600 text-white text-xs px-3 py-1 rounded font-medium transition-colors">Reset</button>
+                      <button id="apply-crop" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded font-medium transition-colors">Apply Crop</button>
+                    </div>
+                  </div>
+
+                  <p class="text-xs text-gray-500 mt-2 text-center">
+                    💡 Drag to move • Scroll wheel or +/- to zoom • Arrow keys for fine positioning
+                  </p>
+
+                  <p class="text-xs text-green-400 mt-2 text-center">✅ Smart cropping prevents ControlNet distortion</p>
                 </div>
               </div>
             </div>

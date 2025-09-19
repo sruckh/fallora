@@ -696,6 +696,97 @@ def serve_reference_image(filename):
     except Exception as e:
         return jsonify({'error': 'Image not found'}), 404
 
+@app.route('/api/crop-reference', methods=['POST'])
+def crop_reference_image():
+    """Generate cropped version of reference image based on user framing"""
+    try:
+        data = request.get_json()
+
+        # Validate required parameters
+        source_url = data.get('source_url')
+        offset_x = data.get('offset_x', 0)
+        offset_y = data.get('offset_y', 0)
+        scale = data.get('scale', 1.0)
+        target_width = data.get('target_width', 1080)
+        target_height = data.get('target_height', 1080)
+
+        if not source_url:
+            return jsonify({'error': 'source_url is required'}), 400
+
+        # Extract filename from source_url
+        if source_url.startswith('/api/reference-images/'):
+            filename = source_url.replace('/api/reference-images/', '')
+        else:
+            return jsonify({'error': 'Invalid source_url format'}), 400
+
+        source_path = os.path.join(REFERENCE_IMAGE_DIR, filename)
+        if not os.path.exists(source_path):
+            return jsonify({'error': 'Source image not found'}), 404
+
+        # Open and process the image
+        with Image.open(source_path) as img:
+            # Convert to RGB if necessary
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+
+            # Calculate crop parameters
+            orig_width, orig_height = img.size
+
+            # Calculate the visible portion of the image based on scale
+            visible_width = orig_width / scale
+            visible_height = orig_height / scale
+
+            # Calculate crop box (centered on offset)
+            # Offset is from center, so convert to top-left coordinates
+            crop_left = (orig_width / 2) - (visible_width / 2) - offset_x
+            crop_top = (orig_height / 2) - (visible_height / 2) - offset_y
+            crop_right = crop_left + visible_width
+            crop_bottom = crop_top + visible_height
+
+            # Ensure crop bounds are within image
+            crop_left = max(0, crop_left)
+            crop_top = max(0, crop_top)
+            crop_right = min(orig_width, crop_right)
+            crop_bottom = min(orig_height, crop_bottom)
+
+            # Crop the image
+            cropped_img = img.crop((crop_left, crop_top, crop_right, crop_bottom))
+
+            # Resize to target dimensions
+            final_img = cropped_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+
+            # Generate unique filename for cropped version
+            crop_filename = f"crop_{uuid.uuid4()}.jpg"
+            crop_path = os.path.join(REFERENCE_IMAGE_DIR, crop_filename)
+
+            # Save cropped image
+            final_img.save(crop_path, 'JPEG', quality=95)
+
+            # Generate URL for cropped image
+            cropped_url = f"/api/reference-images/{crop_filename}"
+
+            print(f"Cropped image generated: {crop_filename}")
+            print(f"Original: {orig_width}x{orig_height}, Crop: {crop_left},{crop_top},{crop_right},{crop_bottom}")
+            print(f"Scale: {scale}, Offset: {offset_x},{offset_y}, Target: {target_width}x{target_height}")
+
+            return jsonify({
+                'success': True,
+                'cropped_url': cropped_url,
+                'crop_filename': crop_filename,
+                'crop_params': {
+                    'scale': scale,
+                    'offset_x': offset_x,
+                    'offset_y': offset_y,
+                    'target_width': target_width,
+                    'target_height': target_height
+                }
+            })
+
+    except Exception as e:
+        print(f"Error cropping reference image: {e}")
+        print(traceback.format_exc())
+        return jsonify({'error': f'Crop failed: {str(e)}'}), 500
+
 @app.route('/api/analyze-image', methods=['POST'])
 def analyze_reference_image():
     """Analyze reference image with z.ai GLM-4.5v"""
